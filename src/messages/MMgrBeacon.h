@@ -23,7 +23,7 @@
 
 class MMgrBeacon : public PaxosServiceMessage {
 
-  static const int HEAD_VERSION = 5;
+  static const int HEAD_VERSION = 6;
   static const int COMPAT_VERSION = 1;
 
 protected:
@@ -34,6 +34,9 @@ protected:
   uuid_d fsid;
   std::set<std::string> available_modules;
   map<string,string> metadata; ///< misc metadata about this osd
+
+  // From active daemon to populate MgrMap::services
+  std::map<std::string, std::string> services;
 
   // Only populated during activation
   std::vector<MonCommand> command_descs;
@@ -65,6 +68,15 @@ public:
     return metadata;
   }
 
+  const std::map<std::string,std::string>& get_services() const {
+    return services;
+  }
+
+  void set_services(const std::map<std::string, std::string> &svcs)
+  {
+    services = svcs;
+  }
+
   void set_command_descs(const std::vector<MonCommand> &cmds)
   {
     command_descs = cmds;
@@ -89,34 +101,39 @@ public:
   }
 
   void encode_payload(uint64_t features) override {
+    using ceph::encode;
     paxos_encode();
-    ::encode(server_addr, payload, features);
-    ::encode(gid, payload);
-    ::encode(available, payload);
-    ::encode(name, payload);
-    ::encode(fsid, payload);
-    ::encode(available_modules, payload);
-    ::encode(command_descs, payload);
-    ::encode(metadata, payload);
+    encode(server_addr, payload, features);
+    encode(gid, payload);
+    encode(available, payload);
+    encode(name, payload);
+    encode(fsid, payload);
+    encode(available_modules, payload);
+    encode(command_descs, payload);
+    encode(metadata, payload);
+    encode(services, payload);
   }
   void decode_payload() override {
     bufferlist::iterator p = payload.begin();
     paxos_decode(p);
-    ::decode(server_addr, p);
-    ::decode(gid, p);
-    ::decode(available, p);
-    ::decode(name, p);
+    decode(server_addr, p);
+    decode(gid, p);
+    decode(available, p);
+    decode(name, p);
     if (header.version >= 2) {
-      ::decode(fsid, p);
+      decode(fsid, p);
     }
     if (header.version >= 3) {
-      ::decode(available_modules, p);
+      decode(available_modules, p);
     }
     if (header.version >= 4) {
-      ::decode(command_descs, p);
+      decode(command_descs, p);
     }
     if (header.version >= 5) {
-      ::decode(metadata, p);
+      decode(metadata, p);
+    }
+    if (header.version >= 6) {
+      decode(services, p);
     }
   }
 };

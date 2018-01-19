@@ -53,7 +53,7 @@ void PerfCountersCollection::add(class PerfCounters *l)
     path += ".";
     path += data.name;
 
-    by_path[path] = &data;
+    by_path[path] = {&data, l};
   }
 }
 
@@ -230,7 +230,7 @@ uint64_t PerfCounters::get(int idx) const
   return data.u64;
 }
 
-void PerfCounters::tinc(int idx, utime_t amt, uint32_t avgcount)
+void PerfCounters::tinc(int idx, utime_t amt)
 {
   if (!m_cct->_conf->perf)
     return;
@@ -249,7 +249,7 @@ void PerfCounters::tinc(int idx, utime_t amt, uint32_t avgcount)
   }
 }
 
-void PerfCounters::tinc(int idx, ceph::timespan amt, uint32_t avgcount)
+void PerfCounters::tinc(int idx, ceph::timespan amt)
 {
   if (!m_cct->_conf->perf)
     return;
@@ -396,12 +396,7 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
       } else {
         f->dump_string("nick", "");
       }
-      if (d->prio) {
-	int p = std::max(std::min(d->prio + prio_adjust,
-				  (int)PerfCountersBuilder::PRIO_CRITICAL),
-			 0);
-	f->dump_int("priority", p);
-      }
+      f->dump_int("priority", get_adjusted_priority(d->prio));
       f->close_section();
     } else {
       if (d->type & PERFCOUNTER_LONGRUNAVG) {
@@ -549,7 +544,7 @@ void PerfCountersBuilder::add_impl(
     assert(strlen(nick) <= 4);
   }
   data.nick = nick;
-  data.prio = prio;
+  data.prio = prio ? prio : prio_default;
   data.type = (enum perfcounter_type_d)ty;
   data.histogram = std::move(histogram);
 }

@@ -52,7 +52,13 @@ private:
    *    \-----> V2_GET_MUTABLE_METADATA                    <apply>
    *                |                                         |
    *                v                                         |
+   *            V2_GET_METADATA                               |
+   *                |                                         |
+   *                v                                         |
    *            V2_GET_FLAGS                                  |
+   *                |                                         |
+   *                v (skip if not enabled)                   |
+   *            V2_GET_OP_FEATURES                            |
    *                |                                         |
    *                v                                         |
    *            V2_GET_GROUP                                  |
@@ -122,11 +128,16 @@ private:
 
   bufferlist m_out_bl;
 
-  uint8_t m_order;
-  uint64_t m_size;
-  uint64_t m_features;
-  uint64_t m_incompatible_features;
-  uint64_t m_flags;
+  uint8_t m_order = 0;
+  uint64_t m_size = 0;
+  uint64_t m_features = 0;
+  uint64_t m_incompatible_features = 0;
+  uint64_t m_flags = 0;
+  uint64_t m_op_features = 0;
+
+  std::string m_last_metadata_key;
+  std::map<std::string, bufferlist> m_metadata;
+
   std::string m_object_prefix;
   ParentInfo m_parent_md;
   cls::rbd::GroupSpec m_group_spec;
@@ -143,7 +154,7 @@ private:
   std::map<rados::cls::lock::locker_id_t,
            rados::cls::lock::locker_info_t> m_lockers;
   std::string m_lock_tag;
-  bool m_exclusive_locked;
+  bool m_exclusive_locked = false;
 
   bool m_blocked_writes = false;
   bool m_incomplete_update = false;
@@ -163,8 +174,14 @@ private:
   void send_v2_get_mutable_metadata();
   Context *handle_v2_get_mutable_metadata(int *result);
 
+  void send_v2_get_metadata();
+  Context *handle_v2_get_metadata(int *result);
+
   void send_v2_get_flags();
   Context *handle_v2_get_flags(int *result);
+
+  void send_v2_get_op_features();
+  Context *handle_v2_get_op_features(int *result);
 
   void send_v2_get_group();
   Context *handle_v2_get_group(int *result);

@@ -49,6 +49,7 @@ extern "C" {
 
 #define LIBRADOS_SUPPORTS_WATCH 1
 #define LIBRADOS_SUPPORTS_SERVICES 1
+#define LIBRADOS_SUPPORTS_APP_METADATA 1
 
 /* RADOS lock flags
  * They are also defined in cls_lock_types.h. Keep them in sync!
@@ -108,7 +109,7 @@ enum {
 
 /**
  * @name Operation Flags
- * Flags for rados_read_op_opeprate(), rados_write_op_operate(),
+ * Flags for rados_read_op_operate(), rados_write_op_operate(),
  * rados_aio_read_op_operate(), and rados_aio_write_op_operate().
  * See librados.hpp for details.
  * @{
@@ -3508,6 +3509,10 @@ CEPH_RADOS_API int rados_blacklist_add(rados_t cluster,
 				       char *client_address,
 				       uint32_t expire_seconds);
 
+CEPH_RADOS_API void rados_set_osdmap_full_try(rados_ioctx_t io);
+
+CEPH_RADOS_API void rados_unset_osdmap_full_try(rados_ioctx_t io);
+
 /**
  * Enable an application on a pool
  *
@@ -3800,7 +3805,7 @@ CEPH_RADOS_API int rados_monitor_log2(rados_t cluster, const char *level,
  *
  * @param cluster handle
  * @param service service name
- * @param daemon deamon instance name
+ * @param daemon daemon instance name
  * @param metadata_dict static daemon metadata dict
  */
 CEPH_RADOS_API int rados_service_register(

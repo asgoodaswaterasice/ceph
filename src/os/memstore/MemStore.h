@@ -21,7 +21,6 @@
 
 #include "include/unordered_map.h"
 #include "include/memory.h"
-#include "include/Spinlock.h"
 #include "common/Finisher.h"
 #include "common/RefCountedObj.h"
 #include "common/RWLock.h"
@@ -54,14 +53,16 @@ public:
     virtual void decode(bufferlist::iterator& p) = 0;
 
     void encode_base(bufferlist& bl) const {
-      ::encode(xattr, bl);
-      ::encode(omap_header, bl);
-      ::encode(omap, bl);
+      using ceph::encode;
+      encode(xattr, bl);
+      encode(omap_header, bl);
+      encode(omap, bl);
     }
     void decode_base(bufferlist::iterator& p) {
-      ::decode(xattr, p);
-      ::decode(omap_header, p);
-      ::decode(omap, p);
+      using ceph::decode;
+      decode(xattr, p);
+      decode(omap_header, p);
+      decode(omap, p);
     }
 
     void dump(Formatter *f) const {
@@ -96,7 +97,7 @@ public:
   struct PageSetObject;
   struct Collection : public CollectionImpl {
     coll_t cid;
-    int bits;
+    int bits = 0;
     CephContext *cct;
     bool use_page_set;
     ceph::unordered_map<ghobject_t, ObjectRef> object_hash;  ///< for lookup
@@ -138,27 +139,27 @@ public:
 
     void encode(bufferlist& bl) const {
       ENCODE_START(1, 1, bl);
-      ::encode(xattr, bl);
-      ::encode(use_page_set, bl);
+      encode(xattr, bl);
+      encode(use_page_set, bl);
       uint32_t s = object_map.size();
-      ::encode(s, bl);
+      encode(s, bl);
       for (map<ghobject_t, ObjectRef>::const_iterator p = object_map.begin();
 	   p != object_map.end();
 	   ++p) {
-	::encode(p->first, bl);
+	encode(p->first, bl);
 	p->second->encode(bl);
       }
       ENCODE_FINISH(bl);
     }
     void decode(bufferlist::iterator& p) {
       DECODE_START(1, p);
-      ::decode(xattr, p);
-      ::decode(use_page_set, p);
+      decode(xattr, p);
+      decode(use_page_set, p);
       uint32_t s;
-      ::decode(s, p);
+      decode(s, p);
       while (s--) {
 	ghobject_t k;
-	::decode(k, p);
+	decode(k, p);
 	auto o = create_object();
 	o->decode(p);
 	object_map.insert(make_pair(k, o));
@@ -279,6 +280,11 @@ public:
   }
   bool needs_journal() override {
     return false;
+  }
+
+  int get_devices(set<string> *ls) override {
+    // no devices for us!
+    return 0;
   }
 
   int statfs(struct store_statfs_t *buf) override;

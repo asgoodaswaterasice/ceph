@@ -757,8 +757,8 @@ void JournalMetadata::handle_refresh_complete(C_Refresh *refresh, int r) {
 	ldout(m_cct, 0) << "client flagged disconnected: " << m_client_id
 			<< dendl;
       }
-      m_minimum_set = MAX(m_minimum_set, refresh->minimum_set);
-      m_active_set = MAX(m_active_set, refresh->active_set);
+      m_minimum_set = std::max(m_minimum_set, refresh->minimum_set);
+      m_active_set = std::max(m_active_set, refresh->active_set);
       m_registered_clients = refresh->registered_clients;
       m_client = *it;
 
@@ -802,9 +802,9 @@ void JournalMetadata::schedule_commit_task() {
   assert(m_lock.is_locked());
   assert(m_commit_position_ctx != nullptr);
   if (m_commit_position_task_ctx == NULL) {
-    m_commit_position_task_ctx = new C_CommitPositionTask(this);
-    m_timer->add_event_after(m_settings.commit_interval,
-                             m_commit_position_task_ctx);
+    m_commit_position_task_ctx =
+      m_timer->add_event_after(m_settings.commit_interval,
+			       new C_CommitPositionTask(this));
   }
 }
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (C) 2014 Cloudwatt <libre.licensing@cloudwatt.com>
 # Copyright (C) 2014, 2015 Red Hat <contact@redhat.com>
@@ -98,7 +98,7 @@ function TEST_rm() {
         grep "WRONG does not exist" || return 1
 
     ceph osd erasure-code-profile set $profile || return 1
-    ceph osd pool create poolname 12 12 erasure $profile || return 1
+    create_pool poolname 12 12 erasure $profile || return 1
     ! ceph osd erasure-code-profile rm $profile > $dir/out 2>&1 || return 1
     grep "poolname.*using.*$profile" $dir/out || return 1
     ceph osd pool delete poolname poolname --yes-i-really-really-mean-it || return 1

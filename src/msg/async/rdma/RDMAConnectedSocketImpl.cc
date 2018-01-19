@@ -200,12 +200,18 @@ int RDMAConnectedSocketImpl::try_connect(const entity_addr_t& peer_addr, const S
 void RDMAConnectedSocketImpl::handle_connection() {
   ldout(cct, 20) << __func__ << " QP: " << my_msg.qpn << " tcp_fd: " << tcp_fd << " notify_fd: " << notify_fd << dendl;
   int r = infiniband->recv_msg(cct, tcp_fd, peer_msg);
-  if (r < 0) {
+  if (r <= 0) {
     if (r != -EAGAIN) {
       dispatcher->perf_logger->inc(l_msgr_rdma_handshake_errors);
       ldout(cct, 1) << __func__ << " recv handshake msg failed." << dendl;
       fault();
     }
+    return;
+  }
+
+  if (1 == connected) {
+    ldout(cct, 1) << __func__ << " warnning: logic failed: read len: " << r << dendl;
+    fault();
     return;
   }
 
@@ -230,6 +236,8 @@ void RDMAConnectedSocketImpl::handle_connection() {
         ldout(cct, 10) << __func__ << " server is already active." << dendl;
         return ;
       }
+      r = activate();
+      assert(!r);
       r = infiniband->send_msg(cct, tcp_fd, my_msg);
       if (r < 0) {
         ldout(cct, 1) << __func__ << " server ack failed." << dendl;
@@ -237,11 +245,10 @@ void RDMAConnectedSocketImpl::handle_connection() {
         fault();
         return ;
       }
-      r = activate();
-      assert(!r);
     } else { // ack from client
       connected = 1;
-      cleanup();
+      ldout(cct, 10) << __func__ << " handshake of rdma is done. server connected: " << connected << dendl;
+      //cleanup();
       submit(false);
       notify();
     }
@@ -253,6 +260,16 @@ ssize_t RDMAConnectedSocketImpl::read(char* buf, size_t len)
   uint64_t i = 0;
   int r = ::read(notify_fd, &i, sizeof(i));
   ldout(cct, 20) << __func__ << " notify_fd : " << i << " in " << my_msg.qpn << " r = " << r << dendl;
+  
+  if (!active) {
+    ldout(cct, 1) << __func__ << " when ib not active. len: " << len << dendl;
+    return -EAGAIN;
+  }
+  
+  if (0 == connected) {
+    ldout(cct, 1) << __func__ << " when ib not connected. len: " << len <<dendl;
+    return -EAGAIN;
+  }
   ssize_t read = 0;
   if (!buffers.empty())
     read = read_buffers(buf,len);
@@ -450,9 +467,9 @@ ssize_t RDMAConnectedSocketImpl::submit(bool more)
         total_copied += r;
         bytes -= r;
         if (current_chunk->full()){
-          current_chunk = tx_buffers[++chunk_idx];
-          if (chunk_idx == tx_buffers.size())
+          if (++chunk_idx == tx_buffers.size())
             return total_copied;
+          current_chunk = tx_buffers[chunk_idx];
         }
       }
       ++start;
@@ -520,10 +537,11 @@ int RDMAConnectedSocketImpl::post_work_request(std::vector<Chunk*> &tx_buffers)
   ibv_send_wr iswr[tx_buffers.size()];
   uint32_t current_swr = 0;
   ibv_send_wr* pre_wr = NULL;
+  uint32_t num = 0; 
 
   memset(iswr, 0, sizeof(iswr));
   memset(isge, 0, sizeof(isge));
-  current_buffer = tx_buffers.begin();
+ 
   while (current_buffer != tx_buffers.end()) {
     isge[current_sge].addr = reinterpret_cast<uint64_t>((*current_buffer)->buffer);
     isge[current_sge].length = (*current_buffer)->get_offset();
@@ -541,6 +559,7 @@ int RDMAConnectedSocketImpl::post_work_request(std::vector<Chunk*> &tx_buffers)
       ldout(cct, 20) << __func__ << " send_inline." << dendl;
       }*/
 
+    num++;
     worker->perf_logger->inc(l_msgr_rdma_tx_bytes, isge[current_sge].length);
     if (pre_wr)
       pre_wr->next = &iswr[current_swr];
@@ -558,6 +577,7 @@ int RDMAConnectedSocketImpl::post_work_request(std::vector<Chunk*> &tx_buffers)
     worker->perf_logger->inc(l_msgr_rdma_tx_failed);
     return -errno;
   }
+  qp->add_tx_wr(num);
   worker->perf_logger->inc(l_msgr_rdma_tx_chunks, tx_buffers.size());
   ldout(cct, 20) << __func__ << " qp state is " << Infiniband::qp_state_string(qp->get_state()) << dendl;
   return 0;
@@ -578,6 +598,7 @@ void RDMAConnectedSocketImpl::fin() {
     worker->perf_logger->inc(l_msgr_rdma_tx_failed);
     return ;
   }
+  qp->add_tx_wr(1);
 }
 
 void RDMAConnectedSocketImpl::cleanup() {
@@ -593,11 +614,11 @@ void RDMAConnectedSocketImpl::cleanup() {
 
 void RDMAConnectedSocketImpl::notify()
 {
+  // note: notify_fd is an event fd (man eventfd)
+  // write argument must be a 64bit integer
   uint64_t i = 1;
-  int ret;
 
-  ret = write(notify_fd, &i, sizeof(i));
-  assert(ret = sizeof(i));
+  assert(sizeof(i) == write(notify_fd, &i, sizeof(i)));
 }
 
 void RDMAConnectedSocketImpl::shutdown()

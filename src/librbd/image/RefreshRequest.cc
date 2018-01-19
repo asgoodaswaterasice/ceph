@@ -1,6 +1,9 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab
 
+#include <boost/algorithm/string/predicate.hpp>
+#include "include/assert.h"
+
 #include "librbd/image/RefreshRequest.h"
 #include "common/dout.h"
 #include "common/errno.h"
@@ -8,6 +11,7 @@
 #include "cls/rbd/cls_rbd_client.h"
 #include "librbd/ExclusiveLock.h"
 #include "librbd/ImageCtx.h"
+#include "librbd/ImageWatcher.h"
 #include "librbd/Journal.h"
 #include "librbd/ObjectMap.h"
 #include "librbd/Utils.h"
@@ -21,6 +25,12 @@
 
 namespace librbd {
 namespace image {
+
+namespace {
+
+const uint64_t MAX_METADATA_ITEMS = 128;
+
+}
 
 using util::create_rados_callback;
 using util::create_async_context_callback;
@@ -285,6 +295,60 @@ Context *RefreshRequest<I>::handle_v2_get_mutable_metadata(int *result) {
     m_incomplete_update = true;
   }
 
+  send_v2_get_metadata();
+  return nullptr;
+}
+
+template <typename I>
+void RefreshRequest<I>::send_v2_get_metadata() {
+  CephContext *cct = m_image_ctx.cct;
+  ldout(cct, 10) << this << " " << __func__ << ": "
+                 << "start_key=" << m_last_metadata_key << dendl;
+
+  librados::ObjectReadOperation op;
+  cls_client::metadata_list_start(&op, m_last_metadata_key, MAX_METADATA_ITEMS);
+
+  using klass = RefreshRequest<I>;
+  librados::AioCompletion *comp =
+    create_rados_callback<klass, &klass::handle_v2_get_metadata>(this);
+  m_out_bl.clear();
+  m_image_ctx.md_ctx.aio_operate(m_image_ctx.header_oid, comp, &op,
+                                  &m_out_bl);
+  comp->release();
+}
+
+template <typename I>
+Context *RefreshRequest<I>::handle_v2_get_metadata(int *result) {
+  CephContext *cct = m_image_ctx.cct;
+  ldout(cct, 10) << this << " " << __func__ << ": r=" << *result << dendl;
+
+  std::map<std::string, bufferlist> metadata;
+  if (*result == 0) {
+    bufferlist::iterator it = m_out_bl.begin();
+    *result = cls_client::metadata_list_finish(&it, &metadata);
+  }
+
+  if (*result == -EOPNOTSUPP || *result == -EIO) {
+    ldout(cct, 10) << "config metadata not supported by OSD" << dendl;
+  } else if (*result < 0) {
+    lderr(cct) << "failed to retrieve metadata: " << cpp_strerror(*result)
+               << dendl;
+    return m_on_finish;
+  }
+
+  if (!metadata.empty()) {
+    m_metadata.insert(metadata.begin(), metadata.end());
+    m_last_metadata_key = metadata.rbegin()->first;
+    if (boost::starts_with(m_last_metadata_key,
+                           ImageCtx::METADATA_CONF_PREFIX)) {
+      send_v2_get_metadata();
+      return nullptr;
+    }
+  }
+
+  bool thread_safe = m_image_ctx.image_watcher->is_unregistered();
+  m_image_ctx.apply_metadata(m_metadata, thread_safe);
+
   send_v2_get_flags();
   return nullptr;
 }
@@ -335,6 +399,49 @@ Context *RefreshRequest<I>::handle_v2_get_flags(int *result) {
     return nullptr;
   } else if (*result < 0) {
     lderr(cct) << "failed to retrieve flags: " << cpp_strerror(*result)
+               << dendl;
+    return m_on_finish;
+  }
+
+  send_v2_get_op_features();
+  return nullptr;
+}
+
+template <typename I>
+void RefreshRequest<I>::send_v2_get_op_features() {
+  if ((m_features & RBD_FEATURE_OPERATIONS) == 0LL) {
+    send_v2_get_group();
+    return;
+  }
+
+  CephContext *cct = m_image_ctx.cct;
+  ldout(cct, 10) << this << " " << __func__ << dendl;
+
+  librados::ObjectReadOperation op;
+  cls_client::op_features_get_start(&op);
+
+  librados::AioCompletion *comp = create_rados_callback<
+    RefreshRequest<I>, &RefreshRequest<I>::handle_v2_get_op_features>(this);
+  m_out_bl.clear();
+  int r = m_image_ctx.md_ctx.aio_operate(m_image_ctx.header_oid, comp, &op,
+                                         &m_out_bl);
+  assert(r == 0);
+  comp->release();
+}
+
+template <typename I>
+Context *RefreshRequest<I>::handle_v2_get_op_features(int *result) {
+  CephContext *cct = m_image_ctx.cct;
+  ldout(cct, 10) << this << " " << __func__ << ": "
+                 << "r=" << *result << dendl;
+
+  // -EOPNOTSUPP handler not required since feature bit implies OSD
+  // supports the method
+  if (*result == 0) {
+    bufferlist::iterator it = m_out_bl.begin();
+    cls_client::op_features_get_finish(&it, &m_op_features);
+  } else if (*result < 0) {
+    lderr(cct) << "failed to retrieve op features: " << cpp_strerror(*result)
                << dendl;
     return m_on_finish;
   }
@@ -1015,11 +1122,16 @@ void RefreshRequest<I>::apply() {
       m_image_ctx.order = m_order;
       m_image_ctx.features = 0;
       m_image_ctx.flags = 0;
+      m_image_ctx.op_features = 0;
+      m_image_ctx.operations_disabled = false;
       m_image_ctx.object_prefix = std::move(m_object_prefix);
       m_image_ctx.init_layout();
     } else {
       m_image_ctx.features = m_features;
       m_image_ctx.flags = m_flags;
+      m_image_ctx.op_features = m_op_features;
+      m_image_ctx.operations_disabled = (
+        (m_op_features & ~RBD_OPERATION_FEATURES_ALL) != 0ULL);
       m_image_ctx.group_spec = m_group_spec;
       m_image_ctx.parent_md = m_parent_md;
     }

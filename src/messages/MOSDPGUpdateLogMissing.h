@@ -25,10 +25,10 @@ class MOSDPGUpdateLogMissing : public MOSDFastDispatchOp {
 
 
 public:
-  epoch_t map_epoch, min_epoch;
+  epoch_t map_epoch = 0, min_epoch = 0;
   spg_t pgid;
   shard_id_t from;
-  ceph_tid_t rep_tid;
+  ceph_tid_t rep_tid = 0;
   mempool::osd_pglog::list<pg_log_entry_t> entries;
 
   epoch_t get_epoch() const { return map_epoch; }
@@ -78,22 +78,23 @@ public:
   }
 
   void encode_payload(uint64_t features) override {
-    ::encode(map_epoch, payload);
-    ::encode(pgid, payload);
-    ::encode(from, payload);
-    ::encode(rep_tid, payload);
-    ::encode(entries, payload);
-    ::encode(min_epoch, payload);
+    using ceph::encode;
+    encode(map_epoch, payload);
+    encode(pgid, payload);
+    encode(from, payload);
+    encode(rep_tid, payload);
+    encode(entries, payload);
+    encode(min_epoch, payload);
   }
   void decode_payload() override {
     bufferlist::iterator p = payload.begin();
-    ::decode(map_epoch, p);
-    ::decode(pgid, p);
-    ::decode(from, p);
-    ::decode(rep_tid, p);
-    ::decode(entries, p);
+    decode(map_epoch, p);
+    decode(pgid, p);
+    decode(from, p);
+    decode(rep_tid, p);
+    decode(entries, p);
     if (header.version >= 2) {
-      ::decode(min_epoch, p);
+      decode(min_epoch, p);
     } else {
       min_epoch = map_epoch;
     }

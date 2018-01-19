@@ -127,9 +127,23 @@ public:
 };
 WRITE_CLASS_ENCODER_FEATURES(InodeStore)
 
+// just for ceph-dencoder
+class InodeStoreBare : public InodeStore {
+public:
+  void encode(bufferlist &bl, uint64_t features) const {
+    InodeStore::encode_bare(bl, features);
+  }
+  void decode(bufferlist::iterator &bl) {
+    InodeStore::decode_bare(bl);
+  }
+  static void generate_test_instances(std::list<InodeStoreBare*>& ls);
+};
+WRITE_CLASS_ENCODER_FEATURES(InodeStoreBare)
+
 // cached inode wrapper
 class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CInode> {
  public:
+  MEMPOOL_CLASS_HELPERS();
   // -- pins --
   static const int PIN_DIRFRAG =         -1; 
   static const int PIN_CAPS =             2;  // client caps
@@ -207,7 +221,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   static const int MASK_STATE_EXPORTED =
     (STATE_DIRTY|STATE_NEEDSRECOVER|STATE_DIRTYPARENT|STATE_DIRTYPOOL);
   static const int MASK_STATE_EXPORT_KEPT =
-    (STATE_FROZEN|STATE_AMBIGUOUSAUTH|STATE_EXPORTINGCAPS);
+    (STATE_FROZEN|STATE_AMBIGUOUSAUTH|STATE_EXPORTINGCAPS|STATE_QUEUEDEXPORTPIN);
 
   // -- waiters --
   static const uint64_t WAIT_DIR         = (1<<0);
@@ -259,7 +273,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
     /// my own (temporary) stamps and versions for each dirfrag we have
     std::map<frag_t, scrub_stamp_info_t> dirfrag_stamps;
 
-    ScrubHeaderRefConst header;
+    ScrubHeaderRef header;
 
     scrub_info_t() : scrub_stamp_info_t(),
 	scrub_parent(NULL), on_finish(NULL),
@@ -271,6 +285,14 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
     if (!scrub_infop)
       scrub_info_create();
     return scrub_infop;
+  }
+
+  ScrubHeaderRef get_scrub_header() {
+    if (scrub_infop == nullptr) {
+      return nullptr;
+    } else {
+      return scrub_infop->header;
+    }
   }
 
   bool scrub_is_in_progress() const {
@@ -285,7 +307,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
    * directory's get_projected_version())
    */
   void scrub_initialize(CDentry *scrub_parent,
-			const ScrubHeaderRefConst& header,
+			ScrubHeaderRef& header,
 			MDSInternalContextBase *f);
   /**
    * Get the next dirfrag to scrub. Gives you a frag_t in output param which
@@ -470,19 +492,6 @@ public:
     else
       return NULL;
   }
-  sr_t *get_projected_srnode() {
-    if (num_projected_srnodes > 0) {
-      for (std::list<projected_inode_t*>::reverse_iterator p = projected_nodes.rbegin();
-	   p != projected_nodes.rend();
-	   ++p)
-	if ((*p)->snapnode)
-	  return (*p)->snapnode;
-    }
-    if (snaprealm)
-      return &snaprealm->srnode;
-    else
-      return NULL;
-  }
   void project_past_snaprealm_parent(SnapRealm *newparent);
 
 private:
@@ -493,6 +502,7 @@ public:
   void split_old_inode(snapid_t snap);
   old_inode_t *pick_old_inode(snapid_t last);
   void pre_cow_old_inode();
+  bool has_snap_data(snapid_t s);
   void purge_stale_snap_data(const std::set<snapid_t>& snaps);
 
   // -- cache infrastructure --
@@ -504,11 +514,12 @@ private:
 public:
   bool has_dirfrags() { return !dirfrags.empty(); }
   CDir* get_dirfrag(frag_t fg) {
-    if (dirfrags.count(fg)) {
+    auto pi = dirfrags.find(fg);
+    if (pi != dirfrags.end()) {
       //assert(g_conf->debug_mds < 2 || dirfragtree.is_leaf(fg)); // performance hack FIXME
-      return dirfrags[fg];
-    } else
-      return NULL;
+      return pi->second;
+    } 
+    return NULL;
   }
   bool get_dirfrags_under(frag_t fg, std::list<CDir*>& ls);
   CDir* get_approx_dirfrag(frag_t fg);
@@ -580,26 +591,28 @@ protected:
     clear_flock_lock_state();
   }
   void _encode_file_locks(bufferlist& bl) const {
+    using ceph::encode;
     bool has_fcntl_locks = fcntl_locks && !fcntl_locks->empty();
-    ::encode(has_fcntl_locks, bl);
+    encode(has_fcntl_locks, bl);
     if (has_fcntl_locks)
-      ::encode(*fcntl_locks, bl);
+      encode(*fcntl_locks, bl);
     bool has_flock_locks = flock_locks && !flock_locks->empty();
-    ::encode(has_flock_locks, bl);
+    encode(has_flock_locks, bl);
     if (has_flock_locks)
-      ::encode(*flock_locks, bl);
+      encode(*flock_locks, bl);
   }
   void _decode_file_locks(bufferlist::iterator& p) {
+    using ceph::decode;
     bool has_fcntl_locks;
-    ::decode(has_fcntl_locks, p);
+    decode(has_fcntl_locks, p);
     if (has_fcntl_locks)
-      ::decode(*get_fcntl_lock_state(), p);
+      decode(*get_fcntl_lock_state(), p);
     else
       clear_fcntl_lock_state();
     bool has_flock_locks;
-    ::decode(has_flock_locks, p);
+    decode(has_flock_locks, p);
     if (has_flock_locks)
-      ::decode(*get_flock_lock_state(), p);
+      decode(*get_flock_lock_state(), p);
     else
       clear_flock_lock_state();
   }
@@ -614,6 +627,10 @@ public:
   elist<CInode*>::item item_dirty_dirfrag_nest;
   elist<CInode*>::item item_dirty_dirfrag_dirfragtree;
   elist<CInode*>::item item_scrub;
+
+  // also update RecoveryQueue::RecoveryQueue() if you change this
+  elist<CInode*>::item& item_recover_queue = item_dirty_dirfrag_dir;
+  elist<CInode*>::item& item_recover_queue_front = item_dirty_dirfrag_nest;
 
 public:
   int auth_pin_freeze_allowance;
@@ -705,8 +722,13 @@ public:
   inode_t& get_inode() { return inode; }
   CDentry* get_parent_dn() { return parent; }
   const CDentry* get_parent_dn() const { return parent; }
-  const CDentry* get_projected_parent_dn() const { return !projected_parent.empty() ? projected_parent.back() : parent; }
   CDentry* get_projected_parent_dn() { return !projected_parent.empty() ? projected_parent.back() : parent; }
+  const CDentry* get_projected_parent_dn() const { return !projected_parent.empty() ? projected_parent.back() : parent; }
+  const CDentry* get_oldest_parent_dn() const {
+    if (parent)
+      return parent;
+    return !projected_parent.empty() ? projected_parent.front(): NULL;
+  }
   CDir *get_parent_dir();
   const CDir *get_projected_parent_dir() const;
   CDir *get_projected_parent_dir();
@@ -719,7 +741,8 @@ public:
   }
 
   // -- misc -- 
-  bool is_projected_ancestor_of(CInode *other);
+  bool is_ancestor_of(const CInode *other) const;
+  bool is_projected_ancestor_of(const CInode *other) const;
 
   void make_path_string(std::string& s, bool projected=false, const CDentry *use_parent=NULL) const;
   void make_path(filepath& s, bool projected=false) const;
@@ -771,7 +794,7 @@ public:
   void encode_store(bufferlist& bl, uint64_t features);
   void decode_store(bufferlist::iterator& bl);
 
-  void encode_replica(mds_rank_t rep, bufferlist& bl, uint64_t features) {
+  void encode_replica(mds_rank_t rep, bufferlist& bl, uint64_t features, bool need_recover) {
     assert(is_auth());
     
     // relax locks?
@@ -779,14 +802,16 @@ public:
       replicate_relax_locks();
     
     __u32 nonce = add_replica(rep);
-    ::encode(nonce, bl);
+    using ceph::encode;
+    encode(nonce, bl);
     
     _encode_base(bl, features);
-    _encode_locks_state_for_replica(bl);
+    _encode_locks_state_for_replica(bl, need_recover);
   }
   void decode_replica(bufferlist::iterator& p, bool is_new) {
+    using ceph::decode;
     __u32 nonce;
-    ::decode(nonce, p);
+    decode(nonce, p);
     replica_nonce = nonce;
     
     _decode_base(p);
@@ -810,11 +835,11 @@ public:
   void _decode_base(bufferlist::iterator& p);
   void _encode_locks_full(bufferlist& bl);
   void _decode_locks_full(bufferlist::iterator& p);
-  void _encode_locks_state_for_replica(bufferlist& bl);
+  void _encode_locks_state_for_replica(bufferlist& bl, bool need_recover);
   void _encode_locks_state_for_rejoin(bufferlist& bl, int rep);
   void _decode_locks_state(bufferlist::iterator& p, bool is_new);
   void _decode_locks_rejoin(bufferlist::iterator& p, std::list<MDSInternalContextBase*>& waiters,
-			    std::list<SimpleLock*>& eval_locks);
+			    std::list<SimpleLock*>& eval_locks, bool survivor);
 
   // -- import/export --
   void encode_export(bufferlist& bl);
@@ -913,9 +938,9 @@ public:
   }
 
   client_t calc_ideal_loner();
-  client_t choose_ideal_loner();
-  bool try_set_loner();
   void set_loner_cap(client_t l);
+  bool choose_ideal_loner();
+  bool try_set_loner();
   bool try_drop_loner();
 
   // choose new lock state during recovery, based on issued caps
@@ -1094,14 +1119,13 @@ public:
    */
   struct validated_data {
     template<typename T>struct member_status {
-      bool checked;
-      bool passed;
-      int ondisk_read_retval;
+      bool checked = false;
+      bool passed = false;
+      bool repaired = false;
+      int ondisk_read_retval = 0;
       T ondisk_value;
       T memory_value;
       std::stringstream error_str;
-      member_status() : checked(false), passed(false),
-          ondisk_read_retval(0) {}
     };
 
     bool performed_validation;
@@ -1120,6 +1144,8 @@ public:
         passed_validation(false) {}
 
     void dump(Formatter *f) const;
+
+    bool all_damage_repaired() const;
   };
 
   /**

@@ -49,6 +49,7 @@ bool operator<(const CDentry& l, const CDentry& r);
 // dentry
 class CDentry : public MDSCacheObject, public LRUObject, public Counter<CDentry> {
 public:
+  MEMPOOL_CLASS_HELPERS();
   friend class CDir;
 
   struct linkage_t {
@@ -243,17 +244,17 @@ public:
   void clear_new() { state_clear(STATE_NEW); }
   
   // -- replication
-  void encode_replica(mds_rank_t mds, bufferlist& bl) {
+  void encode_replica(mds_rank_t mds, bufferlist& bl, bool need_recover) {
     if (!is_replicated())
       lock.replicate_relax();
 
     __u32 nonce = add_replica(mds);
-    ::encode(nonce, bl);
-    ::encode(first, bl);
-    ::encode(linkage.remote_ino, bl);
-    ::encode(linkage.remote_d_type, bl);
-    __s32 ls = lock.get_replica_state();
-    ::encode(ls, bl);
+    encode(nonce, bl);
+    encode(first, bl);
+    encode(linkage.remote_ino, bl);
+    encode(linkage.remote_d_type, bl);
+    lock.encode_state_for_replica(bl);
+    encode(need_recover, bl);
   }
   void decode_replica(bufferlist::iterator& p, bool is_new);
 
@@ -261,12 +262,12 @@ public:
   // note: this assumes the dentry already exists.  
   // i.e., the name is already extracted... so we just need the other state.
   void encode_export(bufferlist& bl) {
-    ::encode(first, bl);
-    ::encode(state, bl);
-    ::encode(version, bl);
-    ::encode(projected_version, bl);
-    ::encode(lock, bl);
-    ::encode(replica_map, bl);
+    encode(first, bl);
+    encode(state, bl);
+    encode(version, bl);
+    encode(projected_version, bl);
+    encode(lock, bl);
+    encode(get_replicas(), bl);
     get(PIN_TEMPEXPORTING);
   }
   void finish_export() {
@@ -282,20 +283,20 @@ public:
     put(PIN_TEMPEXPORTING);
   }
   void decode_import(bufferlist::iterator& blp, LogSegment *ls) {
-    ::decode(first, blp);
+    decode(first, blp);
     __u32 nstate;
-    ::decode(nstate, blp);
-    ::decode(version, blp);
-    ::decode(projected_version, blp);
-    ::decode(lock, blp);
-    ::decode(replica_map, blp);
+    decode(nstate, blp);
+    decode(version, blp);
+    decode(projected_version, blp);
+    decode(lock, blp);
+    decode(get_replicas(), blp);
 
     // twiddle
     state &= MASK_STATE_IMPORT_KEPT;
     state_set(CDentry::STATE_AUTH);
     if (nstate & STATE_DIRTY)
       _mark_dirty(ls);
-    if (!replica_map.empty())
+    if (is_replicated())
       get(PIN_REPLICATED);
     replica_nonce = 0;
   }
@@ -346,7 +347,7 @@ public:
   __u32 hash;
   snapid_t first, last;
 
-  elist<CDentry*>::item item_dirty;
+  elist<CDentry*>::item item_dirty, item_dir_dirty;
   elist<CDentry*>::item item_stray;
 
   // lock

@@ -68,7 +68,7 @@ private:
   std::atomic_flag *m_invalidate;
 
   librados::snap_set_t m_snap_set;
-  int m_snap_list_ret;
+  int m_snap_list_ret = 0;
 
   bool should_complete(int r) {
     I &image_ctx = this->m_image_ctx;
@@ -218,7 +218,7 @@ bool ObjectMapIterateRequest<I>::should_complete(int r) {
     break;
 
   default:
-    assert(false);
+    ceph_abort();
     break;
   }
 
@@ -256,7 +256,7 @@ void ObjectMapIterateRequest<I>::send_verify_objects() {
   AsyncObjectThrottle<I> *throttle = new AsyncObjectThrottle<I>(
     this, m_image_ctx, context_factory, this->create_callback_context(),
     &m_prog_ctx, 0, num_objects);
-  throttle->start_ops(cct->_conf->rbd_concurrent_management_ops);
+  throttle->start_ops(m_image_ctx.concurrent_management_ops);
 }
 
 template <typename I>

@@ -303,13 +303,23 @@ static int do_kernel_map(const char *poolname, const char *imgname,
     // default and omit it even if it was specified by the user
     // (see ceph.git commit fb0f1986449b)
     if (it->first == "rw" && it->second == "rw") {
-      map_options.erase(it);
+      it = map_options.erase(it);
     } else {
       if (it != map_options.begin())
         oss << ",";
       oss << it->second;
       ++it;
     }
+  }
+
+  r = krbd_is_mapped(krbd, poolname, imgname, snapname, &devnode);
+  if (r < 0) {
+    std::cerr << "rbd: warning: can't get image map infomation: "
+	      << cpp_strerror(r) << std::endl;
+  } else if (r > 0) {
+    std::cerr << "rbd: warning: image already mapped as " << devnode
+              << std::endl;
+    free(devnode);
   }
 
   r = krbd_map(krbd, poolname, imgname, snapname, oss.str().c_str(), &devnode);
@@ -414,7 +424,8 @@ int execute_map(const po::variables_map &vm) {
   }
 
   // parse default options first so they can be overwritten by cli options
-  char *default_map_options = strdup(g_conf->rbd_default_map_options.c_str());
+  char *default_map_options = strdup(g_conf->get_val<std::string>(
+    "rbd_default_map_options").c_str());
   BOOST_SCOPE_EXIT( (default_map_options) ) {
     free(default_map_options);
   } BOOST_SCOPE_EXIT_END;

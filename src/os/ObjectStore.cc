@@ -20,7 +20,7 @@
 
 #include "filestore/FileStore.h"
 #include "memstore/MemStore.h"
-#if defined(HAVE_LIBAIO)
+#if defined(WITH_BLUESTORE)
 #include "bluestore/BlueStore.h"
 #endif
 #include "kstore/KStore.h"
@@ -30,14 +30,14 @@ void decode_str_str_map_to_bl(bufferlist::iterator& p,
 {
   bufferlist::iterator start = p;
   __u32 n;
-  ::decode(n, p);
+  decode(n, p);
   unsigned len = 4;
   while (n--) {
     __u32 l;
-    ::decode(l, p);
+    decode(l, p);
     p.advance(l);
     len += 4 + l;
-    ::decode(l, p);
+    decode(l, p);
     p.advance(l);
     len += 4 + l;
   }
@@ -49,11 +49,11 @@ void decode_str_set_to_bl(bufferlist::iterator& p,
 {
   bufferlist::iterator start = p;
   __u32 n;
-  ::decode(n, p);
+  decode(n, p);
   unsigned len = 4;
   while (n--) {
     __u32 l;
-    ::decode(l, p);
+    decode(l, p);
     p.advance(l);
     len += 4 + l;
   }
@@ -72,7 +72,7 @@ ObjectStore *ObjectStore::create(CephContext *cct,
   if (type == "memstore") {
     return new MemStore(cct, data);
   }
-#if defined(HAVE_LIBAIO)
+#if defined(WITH_BLUESTORE)
   if (type == "bluestore") {
     return new BlueStore(cct, data);
   }
@@ -102,7 +102,7 @@ int ObjectStore::probe_block_device_fsid(
 {
   int r;
 
-#if defined(HAVE_LIBAIO)
+#if defined(WITH_BLUESTORE)
   // first try bluestore -- it has a crc on its header and will fail
   // reliably.
   r = BlueStore::get_block_device_fsid(cct, path, fsid);

@@ -25,11 +25,11 @@
 
 class KernelDevice : public BlockDevice {
   int fd_direct, fd_buffered;
-  uint64_t size;
-  uint64_t block_size;
   std::string path;
   FS *fs;
   bool aio, dio;
+
+  std::string devname;  ///< kernel dev name (/sys/block/$devname), if any
 
   Mutex debug_lock;
   interval_set<uint64_t> debug_inflight;
@@ -38,8 +38,6 @@ class KernelDevice : public BlockDevice {
   std::mutex flush_mutex;
 
   aio_queue_t aio_queue;
-  aio_callback_t aio_callback;
-  void *aio_callback_priv;
   bool aio_stop;
 
   struct AioCompletionThread : public Thread {
@@ -79,14 +77,15 @@ public:
 
   void aio_submit(IOContext *ioc) override;
 
-  uint64_t get_size() const override {
-    return size;
+  int collect_metadata(const std::string& prefix, map<std::string,std::string> *pm) const override;
+  int get_devname(std::string *s) override {
+    if (devname.empty()) {
+      return -ENOENT;
+    }
+    *s = devname;
+    return 0;
   }
-  uint64_t get_block_size() const override {
-    return block_size;
-  }
-
-  int collect_metadata(std::string prefix, map<std::string,std::string> *pm) const override;
+  int get_devices(std::set<std::string> *ls) override;
 
   int read(uint64_t off, uint64_t len, bufferlist *pbl,
 	   IOContext *ioc,

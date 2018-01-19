@@ -17,9 +17,6 @@
 
 extern std::map<std::string, std::string> rgw_to_http_attrs;
 
-extern string camelcase_dash_http_attr(const string& orig);
-extern string lowercase_dash_http_attr(const string& orig);
-
 extern void rgw_rest_init(CephContext *cct, RGWRados *store, RGWZoneGroup& zone_group);
 
 extern void rgw_flush_formatter_and_reset(struct req_state *s,
@@ -662,6 +659,7 @@ extern void dump_header(struct req_state* s,
 extern void dump_header(struct req_state* s,
                         const boost::string_ref& name,
                         const utime_t& val);
+
 template <class... Args>
 static inline void dump_header_prefixed(struct req_state* s,
                                         const boost::string_ref& name_prefix,
@@ -673,6 +671,24 @@ static inline void dump_header_prefixed(struct req_state* s,
                             name_prefix.data(),
                             static_cast<int>(name.length()),
                             name.data());
+  boost::string_ref full_name(full_name_buf, len);
+  return dump_header(s, std::move(full_name), std::forward<Args>(args)...);
+}
+
+template <class... Args>
+static inline void dump_header_infixed(struct req_state* s,
+                                       const boost::string_ref& prefix,
+                                       const boost::string_ref& infix,
+                                       const boost::string_ref& sufix,
+                                       Args&&... args) {
+  char full_name_buf[prefix.size() + infix.size() + sufix.size() + 1];
+  const auto len = snprintf(full_name_buf, sizeof(full_name_buf), "%.*s%.*s%.*s",
+                            static_cast<int>(prefix.length()),
+                            prefix.data(),
+                            static_cast<int>(infix.length()),
+                            infix.data(),
+                            static_cast<int>(sufix.length()),
+                            sufix.data());
   boost::string_ref full_name(full_name_buf, len);
   return dump_header(s, std::move(full_name), std::forward<Args>(args)...);
 }
@@ -717,7 +733,6 @@ extern void list_all_buckets_end(struct req_state *s);
 extern void dump_time(struct req_state *s, const char *name, real_time *t);
 extern std::string dump_time_to_str(const real_time& t);
 extern void dump_bucket_from_state(struct req_state *s);
-extern void dump_uri_from_state(struct req_state *s);
 extern void dump_redirect(struct req_state *s, const string& redirect);
 extern bool is_valid_url(const char *url);
 extern void dump_access_control(struct req_state *s, const char *origin,

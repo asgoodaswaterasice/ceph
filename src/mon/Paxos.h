@@ -230,6 +230,8 @@ public:
     STATE_WRITING_PREVIOUS,
     // leader: refresh following a commit
     STATE_REFRESH,
+    // Shutdown after WRITING or WRITING_PREVIOUS
+    STATE_SHUTDOWN
   };
 
   /**
@@ -257,6 +259,8 @@ public:
       return "writing-previous";
     case STATE_REFRESH:
       return "refresh";
+    case STATE_SHUTDOWN:
+      return "shutdown";
     default:
       return "UNKNOWN";
     }
@@ -270,6 +274,9 @@ private:
   /**
    * @}
    */
+  int commits_started = 0;
+
+  Cond shutdown_cond;
 
 public:
   /**
@@ -305,6 +312,9 @@ public:
 
   /// @return 'true' if we are refreshing an update just committed
   bool is_refresh() const { return state == STATE_REFRESH; }
+
+  /// @return 'true' if we are in the process of shutting down
+  bool is_shutdown() const { return state == STATE_SHUTDOWN; }
 
 private:
   /**
@@ -562,15 +572,6 @@ private:
    *	      not on the active state, or if the lease has expired.
    */
   list<Context*> waiting_for_writeable;
-  /**
-   * List of callbacks waiting for a commit to finish.
-   *
-   * @remarks This may be used to a) wait for an on-going commit to finish
-   *	      before we proceed with, say, a new proposal; or b) wait for the
-   *	      next commit to be finished so we are sure that our value was
-   *	      fully committed.
-   */
-  list<Context*> waiting_for_commit;
 
   /**
    * Pending proposal transaction
@@ -880,6 +881,7 @@ private:
    */
   void commit_start();
   void commit_finish();   ///< finish a commit after txn becomes durable
+  void abort_commit();    ///< Handle commit finish after shutdown started
   /**
    * Commit the new value to stable storage as being the latest available
    * version.
@@ -1348,25 +1350,6 @@ public:
    * something) that will be deferred (e.g., until the current round finishes).
    */
   bool trigger_propose();
-
-  /**
-   * Add oncommit to the back of the list of callbacks waiting for us to
-   * finish committing.
-   *
-   * @param oncommit A callback
-   */
-  void wait_for_commit(Context *oncommit) {
-    waiting_for_commit.push_back(oncommit);
-  }
-  /**
-   * Add oncommit to the front of the list of callbacks waiting for us to
-   * finish committing.
-   *
-   * @param oncommit A callback
-   */
-  void wait_for_commit_front(Context *oncommit) {
-    waiting_for_commit.push_front(oncommit);
-  }
   /**
    * @}
    */

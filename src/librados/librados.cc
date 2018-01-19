@@ -171,7 +171,7 @@ void librados::ObjectOperation::cmpxattr(const char *name, uint8_t op, uint64_t 
 {
   ::ObjectOperation *o = &impl->o;
   bufferlist bl;
-  ::encode(v, bl);
+  encode(v, bl);
   o->cmpxattr(name, op, CEPH_OSD_CMPXATTR_MODE_U64, bl);
 }
 
@@ -612,6 +612,17 @@ void librados::ObjectWriteOperation::set_redirect(const std::string& tgt_obj,
   ::ObjectOperation *o = &impl->o;
   o->set_redirect(object_t(tgt_obj), tgt_ioctx.io_ctx_impl->snap_seq,
 			  tgt_ioctx.io_ctx_impl->oloc, tgt_version);
+}
+
+void librados::ObjectWriteOperation::set_chunk(uint64_t src_offset,
+					       uint64_t src_length,
+					       const IoCtx& tgt_ioctx,
+					       string tgt_oid,
+					       uint64_t tgt_offset)
+{
+  ::ObjectOperation *o = &impl->o;
+  o->set_chunk(src_offset, src_length, 
+	       tgt_ioctx.io_ctx_impl->oloc, object_t(tgt_oid), tgt_offset);
 }
 
 void librados::ObjectWriteOperation::tmap_put(const bufferlist &bl)
@@ -2355,9 +2366,9 @@ int librados::Rados::service_daemon_register(
 }
 
 int librados::Rados::service_daemon_update_status(
-  const std::map<std::string,std::string>& status)
+  std::map<std::string,std::string>&& status)
 {
-  return client->service_daemon_update_status(status);
+  return client->service_daemon_update_status(std::move(status));
 }
 
 int librados::Rados::pool_create(const char *name)
@@ -2522,7 +2533,7 @@ int librados::Rados::get_pool_stats(std::list<string>& v,
        ++p) {
     pool_stat_t& pv = result[p->first];
     object_stat_sum_t *sum = &p->second.stats.sum;
-    pv.num_kb = SHIFT_ROUND_UP(sum->num_bytes, 10);
+    pv.num_kb = shift_round_up(sum->num_bytes, 10);
     pv.num_bytes = sum->num_bytes;
     pv.num_objects = sum->num_objects;
     pv.num_object_clones = sum->num_object_clones;
@@ -3087,6 +3098,18 @@ extern "C" int rados_blacklist_add(rados_t cluster, char *client_address,
   return radosp->blacklist_add(client_address, expire_seconds);
 }
 
+extern "C" void rados_set_osdmap_full_try(rados_ioctx_t io)
+{
+  librados::IoCtxImpl *ctx = (librados::IoCtxImpl *)io;
+  ctx->objecter->set_osdmap_full_try();
+}
+
+extern "C" void rados_unset_osdmap_full_try(rados_ioctx_t io)
+{
+  librados::IoCtxImpl *ctx = (librados::IoCtxImpl *)io;
+  ctx->objecter->unset_osdmap_full_try();
+}
+
 extern "C" int rados_application_enable(rados_ioctx_t io, const char *app_name,
                                         int force)
 {
@@ -3326,7 +3349,7 @@ CEPH_RADOS_API int rados_service_update_status(rados_t cluster,
   std::map<std::string, std::string> status;
   dict_to_map(status_dict, &status);
 
-  return client->service_daemon_update_status(status);
+  return client->service_daemon_update_status(std::move(status));
 }
 
 static void do_out_buffer(bufferlist& outbl, char **outbuf, size_t *outbuflen)
@@ -3629,7 +3652,7 @@ extern "C" int rados_ioctx_pool_stat(rados_ioctx_t io, struct rados_pool_stat_t 
   }
 
   ::pool_stat_t& r = rawresult[pool_name];
-  stats->num_kb = SHIFT_ROUND_UP(r.stats.sum.num_bytes, 10);
+  stats->num_kb = shift_round_up(r.stats.sum.num_bytes, 10);
   stats->num_bytes = r.stats.sum.num_bytes;
   stats->num_objects = r.stats.sum.num_objects;
   stats->num_object_clones = r.stats.sum.num_object_clones;

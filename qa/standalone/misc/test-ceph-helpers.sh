@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (C) 2013,2014 Cloudwatt <libre.licensing@cloudwatt.com>
 # Copyright (C) 2014 Red Hat <contact@redhat.com>
@@ -18,4 +18,4 @@
 # GNU Library Public License for more details.
 #
 
-$CEPH_ROOT/qa/standalone/ceph-helpers.sh TESTS
+$CEPH_ROOT/qa/standalone/ceph-helpers.sh TESTS "$@"

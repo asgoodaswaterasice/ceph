@@ -265,17 +265,19 @@ public:
 
     // if this changes, update the versioning in encode for it!
     void _encode_bits(uint64_t features) const {
+      using ceph::encode;
       if (!dn_decoded) return;
-      ::encode(dfull, dnbl, features);
-      ::encode(dremote, dnbl);
-      ::encode(dnull, dnbl);
+      encode(dfull, dnbl, features);
+      encode(dremote, dnbl);
+      encode(dnull, dnbl);
     }
     void _decode_bits() const { 
+      using ceph::decode;
       if (dn_decoded) return;
       bufferlist::iterator p = dnbl.begin();
-      ::decode(dfull, p);
-      ::decode(dremote, p);
-      ::decode(dnull, p);
+      decode(dfull, p);
+      decode(dremote, p);
+      decode(dnull, p);
       dn_decoded = true;
     }
 
@@ -335,7 +337,10 @@ private:
   // for replay, in certain cases
   //LogSegment *_segment;
 
-  explicit EMetaBlob(MDLog *mdl = 0);  // defined in journal.cc
+  EMetaBlob() : opened_ino(0), renamed_dirino(0),
+                inotablev(0), sessionmapv(0), allocated_ino(0),
+                last_subtree_map(0), event_seq(0)
+                {}
   ~EMetaBlob() { }
 
   void print(ostream& out) {

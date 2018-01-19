@@ -33,7 +33,8 @@ LeaderWatcher<I>::LeaderWatcher(Threads<I> *threads, librados::IoCtx &io_ctx,
     m_lock("rbd::mirror::LeaderWatcher " + io_ctx.get_pool_name()),
     m_notifier_id(librados::Rados(io_ctx).get_instance_id()),
     m_leader_lock(new LeaderLock(m_ioctx, m_work_queue, m_oid, this, true,
-                                 m_cct->_conf->rbd_blacklist_expire_seconds)) {
+                                 m_cct->_conf->get_val<int64_t>(
+                                   "rbd_blacklist_expire_seconds"))) {
 }
 
 template <typename I>
@@ -370,7 +371,8 @@ void LeaderWatcher<I>::schedule_timer_task(const std::string &name,
       m_timer_gate->timer_callback = timer_callback;
     });
 
-  int after = delay_factor * m_cct->_conf->rbd_mirror_leader_heartbeat_interval;
+  int after = delay_factor * m_cct->_conf->get_val<int64_t>(
+    "rbd_mirror_leader_heartbeat_interval");
 
   dout(20) << "scheduling " << name << " after " << after << " sec (task "
            << m_timer_task << ")" << dendl;
@@ -567,8 +569,8 @@ void LeaderWatcher<I>::handle_get_locker(int r,
     }
   }
 
-  if (m_acquire_attempts >=
-        m_cct->_conf->rbd_mirror_leader_max_acquire_attempts_before_break) {
+  if (m_acquire_attempts >= m_cct->_conf->get_val<int64_t>(
+        "rbd_mirror_leader_max_acquire_attempts_before_break")) {
     dout(0) << "breaking leader lock after " << m_acquire_attempts << " "
             << "failed attempts to acquire" << dendl;
     break_leader_lock();
@@ -604,7 +606,7 @@ void LeaderWatcher<I>::schedule_acquire_leader_lock(uint32_t delay_factor) {
 
   schedule_timer_task("acquire leader lock",
                       delay_factor *
-                        m_cct->_conf->rbd_mirror_leader_max_missed_heartbeats,
+                        m_cct->_conf->get_val<int64_t>("rbd_mirror_leader_max_missed_heartbeats"),
                       false, &LeaderWatcher<I>::acquire_leader_lock, false);
 }
 
@@ -884,7 +886,7 @@ void LeaderWatcher<I>::notify_lock_acquired() {
     LeaderWatcher<I>, &LeaderWatcher<I>::handle_notify_lock_acquired>(this);
 
   bufferlist bl;
-  ::encode(NotifyMessage{LockAcquiredPayload{}}, bl);
+  encode(NotifyMessage{LockAcquiredPayload{}}, bl);
 
   send_notify(bl, nullptr, ctx);
 }
@@ -918,7 +920,7 @@ void LeaderWatcher<I>::notify_lock_released() {
     LeaderWatcher<I>, &LeaderWatcher<I>::handle_notify_lock_released>(this);
 
   bufferlist bl;
-  ::encode(NotifyMessage{LockReleasedPayload{}}, bl);
+  encode(NotifyMessage{LockReleasedPayload{}}, bl);
 
   send_notify(bl, nullptr, ctx);
 }
@@ -959,7 +961,7 @@ void LeaderWatcher<I>::notify_heartbeat() {
     LeaderWatcher<I>, &LeaderWatcher<I>::handle_notify_heartbeat>(this);
 
   bufferlist bl;
-  ::encode(NotifyMessage{HeartbeatPayload{}}, bl);
+  encode(NotifyMessage{HeartbeatPayload{}}, bl);
 
   m_heartbeat_response.acks.clear();
   send_notify(bl, &m_heartbeat_response, ctx);
@@ -1077,7 +1079,7 @@ void LeaderWatcher<I>::handle_notify(uint64_t notify_id, uint64_t handle,
   NotifyMessage notify_message;
   try {
     bufferlist::iterator iter = bl.begin();
-    ::decode(notify_message, iter);
+    decode(notify_message, iter);
   } catch (const buffer::error &err) {
     derr << ": error decoding image notification: " << err.what() << dendl;
     ctx->complete(0);

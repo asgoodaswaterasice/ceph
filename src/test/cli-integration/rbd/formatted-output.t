@@ -6,9 +6,9 @@ ls on empty pool never containing images
   $ rados -p rbd rm rbd_directory >/dev/null 2>&1 || true
   $ rbd ls
   $ rbd ls --format json
-  [] (no-eol)
+  []
   $ rbd ls --format xml
-  <images></images> (no-eol)
+  <images></images>
 
 create
 =======
@@ -550,15 +550,15 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
     <name>quuy</name>
   </images>
   $ rbd list -l
-  NAME       SIZE PARENT FMT PROT LOCK 
-  foo       1024M          1           
-  foo@snap  1024M          1           
-  quux      1024k          1      excl 
-  bar       1024M          2           
-  bar@snap   512M          2 yes       
-  bar@snap2 1024M          2           
-  baz       2048M          2      shr  
-  quuy      2048M          2           
+  NAME      SIZE PARENT FMT PROT LOCK 
+  foo         1G          1           
+  foo@snap    1G          1           
+  quux        1M          1      excl 
+  bar         1G          2           
+  bar@snap  512M          2 yes       
+  bar@snap2   1G          2           
+  baz         2G          2      shr  
+  quuy        2G          2           
   $ rbd list -l --format json | python -mjson.tool | sed 's/,$/, /'
   [
       {
@@ -746,7 +746,7 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   </images>
   $ rbd lock list foo
   $ rbd lock list foo --format json | python -mjson.tool | sed 's/,$/, /'
-  {}
+  []
   $ rbd lock list foo --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <locks></locks>
   $ rbd lock list quux
@@ -754,18 +754,20 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   Locker*ID*Address* (glob)
   client.* id * (glob)
   $ rbd lock list quux --format json | python -mjson.tool | sed 's/,$/, /'
-  {
-      "id": {
+  [
+      {
           "address": "*",  (glob)
+          "id": "id", 
           "locker": "client.*" (glob)
       }
-  }
+  ]
   $ rbd lock list quux --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <locks>
-    <id>
+    <lock>
+      <id>id</id>
       <locker>client.*</locker> (glob)
       <address>*</address> (glob)
-    </id>
+    </lock>
   </locks>
   $ rbd lock list baz
   There are 3 shared locks on this image.
@@ -775,34 +777,40 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
   client.*id[123].* (re)
   client.*id[123].* (re)
   $ rbd lock list baz --format json | python -mjson.tool | sed 's/,$/, /'
-  {
-      "id1": {
+  [
+      {
           "address": "*",  (glob)
+          "id": "id*",  (glob)
           "locker": "client.*" (glob)
       }, 
-      "id2": {
+      {
           "address": "*",  (glob)
+          "id": "id*",  (glob)
           "locker": "client.*" (glob)
       }, 
-      "id3": {
+      {
           "address": "*",  (glob)
+          "id": "id*",  (glob)
           "locker": "client.*" (glob)
       }
-  }
+  ]
   $ rbd lock list baz --format xml | xml_pp 2>&1 | grep -v '^new version at /usr/bin/xml_pp'
   <locks>
-    <id*> (glob)
+    <lock>
+      <id>id*</id> (glob)
       <locker>client.*</locker> (glob)
       <address>*</address> (glob)
-    </id*> (glob)
-    <id*> (glob)
+    </lock>
+    <lock>
+      <id>id*</id> (glob)
       <locker>client.*</locker> (glob)
       <address>*</address> (glob)
-    </id*> (glob)
-    <id*> (glob)
+    </lock>
+    <lock>
+      <id>id*</id> (glob)
       <locker>client.*</locker> (glob)
       <address>*</address> (glob)
-    </id*> (glob)
+    </lock>
   </locks>
   $ rbd snap list foo
   SNAPID NAME    SIZE TIMESTAMP 
@@ -886,12 +894,12 @@ whenever it is run. grep -v to ignore it, but still work on other distros.
     </snapshot>
   </snapshots>
   $ rbd disk-usage --pool rbd_other 2>/dev/null
-  NAME                    PROVISIONED  USED 
-  child@snap                     512M     0 
-  child                          512M 4096k 
-  deep-flatten-child@snap        512M     0 
-  deep-flatten-child             512M     0 
-  <TOTAL>                       1024M 4096k 
+  NAME                    PROVISIONED USED 
+  child@snap                     512M    0 
+  child                          512M   4M 
+  deep-flatten-child@snap        512M    0 
+  deep-flatten-child             512M    0 
+  <TOTAL>                          1G   4M 
   $ rbd disk-usage --pool rbd_other --format json | python -mjson.tool | sed 's/,$/, /'
   {
       "images": [

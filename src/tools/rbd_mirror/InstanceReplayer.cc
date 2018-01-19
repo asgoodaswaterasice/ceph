@@ -34,11 +34,11 @@ using librbd::util::create_context_callback;
 template <typename I>
 InstanceReplayer<I>::InstanceReplayer(
     Threads<I> *threads, ServiceDaemon<I>* service_daemon,
-    ImageDeleter<I>* image_deleter, RadosRef local_rados,
-    const std::string &local_mirror_uuid, int64_t local_pool_id)
+    RadosRef local_rados, const std::string &local_mirror_uuid,
+    int64_t local_pool_id)
   : m_threads(threads), m_service_daemon(service_daemon),
-    m_image_deleter(image_deleter), m_local_rados(local_rados),
-    m_local_mirror_uuid(local_mirror_uuid), m_local_pool_id(local_pool_id),
+    m_local_rados(local_rados), m_local_mirror_uuid(local_mirror_uuid),
+    m_local_pool_id(local_pool_id),
     m_lock("rbd::mirror::InstanceReplayer " + stringify(local_pool_id)) {
 }
 
@@ -142,7 +142,7 @@ void InstanceReplayer<I>::acquire_image(InstanceWatcher<I> *instance_watcher,
   auto it = m_image_replayers.find(global_image_id);
   if (it == m_image_replayers.end()) {
     auto image_replayer = ImageReplayer<I>::create(
-        m_threads, m_image_deleter, instance_watcher, m_local_rados,
+        m_threads, instance_watcher, m_local_rados,
         m_local_mirror_uuid, m_local_pool_id, global_image_id);
 
     dout(20) << global_image_id << ": creating replayer " << image_replayer
@@ -333,9 +333,9 @@ void InstanceReplayer<I>::start_image_replayers(int r) {
     return;
   }
 
-  size_t image_count = 0;
-  size_t warning_count = 0;
-  size_t error_count = 0;
+  uint64_t image_count = 0;
+  uint64_t warning_count = 0;
+  uint64_t error_count = 0;
   for (auto it = m_image_replayers.begin();
        it != m_image_replayers.end();) {
     auto current_it(it);
@@ -483,7 +483,8 @@ void InstanceReplayer<I>::schedule_image_state_check_task() {
       queue_start_image_replayers();
     });
 
-  int after = g_ceph_context->_conf->rbd_mirror_image_state_check_interval;
+  int after = g_ceph_context->_conf->get_val<int64_t>(
+    "rbd_mirror_image_state_check_interval");
 
   dout(20) << "scheduling image state check after " << after << " sec (task "
            << m_image_state_check_task << ")" << dendl;

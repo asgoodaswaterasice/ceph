@@ -23,7 +23,6 @@
 #include <atomic>
 #include <fstream>
 
-using namespace std;
 
 #include <boost/scoped_ptr.hpp>
 
@@ -395,7 +394,7 @@ private:
     }
     OpSequencer *_dequeue() override {
       if (store->op_queue.empty())
-	return NULL;
+	return nullptr;
       OpSequencer *osr = store->op_queue.front();
       store->op_queue.pop_front();
       return osr;
@@ -430,7 +429,7 @@ private:
 
 public:
   int lfn_find(const ghobject_t& oid, const Index& index,
-                                  IndexedPath *path = NULL);
+                                  IndexedPath *path = nullptr);
   int lfn_truncate(const coll_t& cid, const ghobject_t& oid, off_t length);
   int lfn_stat(const coll_t& cid, const ghobject_t& oid, struct stat *buf);
   int lfn_open(
@@ -438,7 +437,7 @@ public:
     const ghobject_t& oid,
     bool create,
     FDRef *outfd,
-    Index *index = 0);
+    Index *index = nullptr);
 
   void lfn_close(FDRef fd);
   int lfn_link(const coll_t& c, const coll_t& newcid, const ghobject_t& o, const ghobject_t& newoid) ;
@@ -483,6 +482,10 @@ public:
     return false;
   }
 
+  bool is_sync_onreadable() const override {
+    return false;
+  }
+
   bool is_rotational() override;
   bool is_journal_rotational() override;
 
@@ -502,6 +505,7 @@ public:
   }
 
   void collect_metadata(map<string,string> *pm) override;
+  int get_devices(set<string> *ls) override;
 
   int statfs(struct store_statfs_t *buf) override;
 
@@ -517,7 +521,7 @@ public:
 
   int queue_transactions(Sequencer *osr, vector<Transaction>& tls,
 			 TrackedOpRef op = TrackedOpRef(),
-			 ThreadPool::TPHandle *handle = NULL) override;
+			 ThreadPool::TPHandle *handle = nullptr) override;
 
   /**
    * set replay guard xattr on given file
@@ -616,8 +620,6 @@ public:
   int _fgetattrs(int fd, map<string,bufferptr>& aset);
   int _fsetattrs(int fd, map<string, bufferptr> &aset);
 
-  void _start_sync();
-
   void do_force_sync();
   void start_sync(Context *onsafe);
   void sync();
@@ -645,6 +647,10 @@ public:
   void compact() override {
     assert(object_map);
     object_map->compact();
+  }
+
+  bool has_builtin_csum() const override {
+    return false;
   }
 
   void debug_obj_on_delete(const ghobject_t &oid);
@@ -735,7 +741,7 @@ public:
   void dump_stop();
   void dump_transactions(vector<Transaction>& ls, uint64_t seq, OpSequencer *osr);
 
-  virtual int apply_layout_settings(const coll_t &cid);
+  virtual int apply_layout_settings(const coll_t &cid, int target_level);
 
 private:
   void _inject_failure();

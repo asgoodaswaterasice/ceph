@@ -79,7 +79,7 @@ int MemStore::_save()
 
   string fn = path + "/collections";
   bufferlist bl;
-  ::encode(collections, bl);
+  encode(collections, bl);
   int r = bl.write_file(fn.c_str());
   if (r < 0)
     return r;
@@ -148,7 +148,7 @@ int MemStore::_load()
 
   set<coll_t> collections;
   bufferlist::iterator p = bl.begin();
-  ::decode(collections, p);
+  decode(collections, p);
 
   for (set<coll_t>::iterator q = collections.begin();
        q != collections.end();
@@ -172,14 +172,14 @@ int MemStore::_load()
 
 void MemStore::set_fsid(uuid_d u)
 {
-  int r = write_meta("fs_fsid", stringify(u));
+  int r = write_meta("fsid", stringify(u));
   assert(r >= 0);
 }
 
 uuid_d MemStore::get_fsid()
 {
   string fsid_str;
-  int r = read_meta("fs_fsid", &fsid_str);
+  int r = read_meta("fsid", &fsid_str);
   assert(r >= 0);
   uuid_d uuid;
   bool b = uuid.parse(fsid_str.c_str());
@@ -190,12 +190,12 @@ uuid_d MemStore::get_fsid()
 int MemStore::mkfs()
 {
   string fsid_str;
-  int r = read_meta("fs_fsid", &fsid_str);
+  int r = read_meta("fsid", &fsid_str);
   if (r == -ENOENT) {
     uuid_d fsid;
     fsid.generate_random();
     fsid_str = stringify(fsid);
-    r = write_meta("fs_fsid", fsid_str);
+    r = write_meta("fsid", fsid_str);
     if (r < 0)
       return r;
     dout(1) << __func__ << " new fsid " << fsid_str << dendl;
@@ -209,7 +209,7 @@ int MemStore::mkfs()
   derr << path << dendl;
   bufferlist bl;
   set<coll_t> collections;
-  ::encode(collections, bl);
+  encode(collections, bl);
   r = bl.write_file(fn.c_str());
   if (r < 0)
     return r;
@@ -226,7 +226,7 @@ int MemStore::statfs(struct store_statfs_t *st)
    dout(10) << __func__ << dendl;
   st->reset();
   st->total = cct->_conf->memstore_device_bytes;
-  st->available = MAX(int64_t(st->total) - int64_t(used_bytes), 0ll);
+  st->available = std::max<int64_t>(st->total - used_bytes, 0);
   dout(10) << __func__ << ": used_bytes: " << used_bytes
 	   << "/" << cct->_conf->memstore_device_bytes << dendl;
   return 0;
@@ -357,7 +357,7 @@ int MemStore::fiemap(const coll_t& cid, const ghobject_t& oid,
   map<uint64_t, uint64_t> destmap;
   int r = fiemap(cid, oid, offset, len, destmap);
   if (r >= 0)
-    ::encode(destmap, bl);
+    encode(destmap, bl);
   return r;
 }
 
@@ -884,8 +884,8 @@ void MemStore::_do_transaction(Transaction& t)
         if (type == Transaction::COLL_HINT_EXPECTED_NUM_OBJECTS) {
           uint32_t pg_num;
           uint64_t num_objs;
-          ::decode(pg_num, hiter);
-          ::decode(num_objs, hiter);
+          decode(pg_num, hiter);
+          decode(num_objs, hiter);
           r = _collection_hint_expected_num_objs(cid, pg_num, num_objs);
         } else {
           // Ignore the hint
@@ -1294,11 +1294,11 @@ int MemStore::_omap_setkeys(const coll_t& cid, const ghobject_t &oid,
   std::lock_guard<std::mutex> lock(o->omap_mutex);
   bufferlist::iterator p = aset_bl.begin();
   __u32 num;
-  ::decode(num, p);
+  decode(num, p);
   while (num--) {
     string key;
-    ::decode(key, p);
-    ::decode(o->omap[key], p);
+    decode(key, p);
+    decode(o->omap[key], p);
   }
   return 0;
 }
@@ -1317,10 +1317,10 @@ int MemStore::_omap_rmkeys(const coll_t& cid, const ghobject_t &oid,
   std::lock_guard<std::mutex> lock(o->omap_mutex);
   bufferlist::iterator p = keys_bl.begin();
   __u32 num;
-  ::decode(num, p);
+  decode(num, p);
   while (num--) {
     string key;
-    ::decode(key, p);
+    decode(key, p);
     o->omap.erase(key);
   }
   return 0;
@@ -1400,8 +1400,8 @@ int MemStore::_collection_add(const coll_t& cid, const coll_t& ocid, const ghobj
   CollectionRef oc = get_collection(ocid);
   if (!oc)
     return -ENOENT;
-  RWLock::WLocker l1(MIN(&(*c), &(*oc))->lock);
-  RWLock::WLocker l2(MAX(&(*c), &(*oc))->lock);
+  RWLock::WLocker l1(std::min(&(*c), &(*oc))->lock);
+  RWLock::WLocker l2(std::max(&(*c), &(*oc))->lock);
 
   if (c->object_hash.count(oid))
     return -EEXIST;
@@ -1459,8 +1459,8 @@ int MemStore::_split_collection(const coll_t& cid, uint32_t bits, uint32_t match
   CollectionRef dc = get_collection(dest);
   if (!dc)
     return -ENOENT;
-  RWLock::WLocker l1(MIN(&(*sc), &(*dc))->lock);
-  RWLock::WLocker l2(MAX(&(*sc), &(*dc))->lock);
+  RWLock::WLocker l1(std::min(&(*sc), &(*dc))->lock);
+  RWLock::WLocker l2(std::max(&(*sc), &(*dc))->lock);
 
   map<ghobject_t,ObjectRef>::iterator p = sc->object_map.begin();
   while (p != sc->object_map.end()) {
@@ -1482,7 +1482,7 @@ int MemStore::_split_collection(const coll_t& cid, uint32_t bits, uint32_t match
 }
 namespace {
 struct BufferlistObject : public MemStore::Object {
-  Spinlock mutex;
+  ceph::spinlock mutex;
   bufferlist data;
 
   size_t get_size() const override { return data.length(); }
@@ -1495,13 +1495,13 @@ struct BufferlistObject : public MemStore::Object {
 
   void encode(bufferlist& bl) const override {
     ENCODE_START(1, 1, bl);
-    ::encode(data, bl);
+    encode(data, bl);
     encode_base(bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& p) override {
     DECODE_START(1, p);
-    ::decode(data, p);
+    decode(data, p);
     decode_base(p);
     DECODE_FINISH(p);
   }
@@ -1511,7 +1511,7 @@ struct BufferlistObject : public MemStore::Object {
 int BufferlistObject::read(uint64_t offset, uint64_t len,
                                      bufferlist &bl)
 {
-  std::lock_guard<Spinlock> lock(mutex);
+  std::lock_guard<decltype(mutex)> lock(mutex);
   bl.substr_of(data, offset, len);
   return bl.length();
 }
@@ -1520,7 +1520,7 @@ int BufferlistObject::write(uint64_t offset, const bufferlist &src)
 {
   unsigned len = src.length();
 
-  std::lock_guard<Spinlock> lock(mutex);
+  std::lock_guard<decltype(mutex)> lock(mutex);
 
   // before
   bufferlist newdata;
@@ -1555,7 +1555,7 @@ int BufferlistObject::clone(Object *src, uint64_t srcoff,
 
   bufferlist bl;
   {
-    std::lock_guard<Spinlock> lock(srcbl->mutex);
+    std::lock_guard<decltype(srcbl->mutex)> lock(srcbl->mutex);
     if (srcoff == dstoff && len == src->get_size()) {
       data = srcbl->data;
       return 0;
@@ -1567,7 +1567,7 @@ int BufferlistObject::clone(Object *src, uint64_t srcoff,
 
 int BufferlistObject::truncate(uint64_t size)
 {
-  std::lock_guard<Spinlock> lock(mutex);
+  std::lock_guard<decltype(mutex)> lock(mutex);
   if (get_size() > size) {
     bufferlist bl;
     bl.substr_of(data, 0, size);
@@ -1603,14 +1603,14 @@ struct MemStore::PageSetObject : public Object {
 
   void encode(bufferlist& bl) const override {
     ENCODE_START(1, 1, bl);
-    ::encode(data_len, bl);
+    encode(data_len, bl);
     data.encode(bl);
     encode_base(bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& p) override {
     DECODE_START(1, p);
-    ::decode(data_len, p);
+    decode(data_len, p);
     data.decode(p);
     decode_base(p);
     DECODE_FINISH(p);

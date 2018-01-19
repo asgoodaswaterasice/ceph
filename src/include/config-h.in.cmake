@@ -87,6 +87,9 @@
 /* Defined if you have LZ4 */
 #cmakedefine HAVE_LZ4
 
+/* Defined if you have BROTLI */
+#cmakedefine HAVE_BROTLI
+
 /* Defined if you have libaio */
 #cmakedefine HAVE_LIBAIO
 
@@ -135,6 +138,9 @@
 
 /* ibverbs experimental conditional compilation */
 #cmakedefine HAVE_IBV_EXP
+
+/* define if bluestore enabled */
+#cmakedefine WITH_BLUESTORE
 
 /* define if embedded enabled */
 #cmakedefine WITH_EMBEDDED
@@ -298,6 +304,9 @@
 /* Defined if pthread_setname_np() is available */
 #cmakedefine HAVE_PTHREAD_SETNAME_NP 1
 
+/* Defined if pthread_rwlockattr_setkind_np() is available */
+#cmakedefine HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP
+
 /* Defined if blkin enabled */
 #cmakedefine WITH_BLKIN
 
@@ -320,5 +329,11 @@
 
 /* Define to 1 if you have the `getprogname' function. */
 #cmakedefine HAVE_GETPROGNAME 1
+
+/* Defined if getentropy() is available */
+#cmakedefine HAVE_GETENTROPY
+
+/* Defined if boost::context is available */
+#cmakedefine HAVE_BOOST_CONTEXT
 
 #endif /* CONFIG_H */

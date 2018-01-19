@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (C) 2017 Quantum Corp.
 #
@@ -136,7 +136,7 @@ function TEST_put_get() {
     run_osd $dir 1 || return 1
     run_osd $dir 2 || return 1
 
-    ceph osd pool create hello 8 || return 1
+    create_pool hello 8 || return 1
 
     echo "hello world" > $dir/hello
     rados --pool hello put foo $dir/hello || return 1
