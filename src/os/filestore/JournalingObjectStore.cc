@@ -205,10 +205,10 @@ bool JournalingObjectStore::ApplyManager::commit_start()
     {
       Mutex::Locker l(com_lock);
       if (max_applied_seq == committed_seq) {
-	dout(10) << "commit_start nothing to do" << dendl;
-	blocked = false;
-	assert(commit_waiters.empty());
-	goto out;
+	      dout(10) << "commit_start nothing to do" << dendl;
+	      blocked = false;
+	      assert(commit_waiters.empty());
+	      goto out;
       }
 
       committing_seq = max_applied_seq;

@@ -127,7 +127,7 @@ public:
   }
 
   static int get_block_device_fsid(CephContext* cct, const string& path,
-				   uuid_d *fsid);
+           uuid_d *fsid);
   struct FSPerfTracker {
     PerfCounters::avg_tracker<uint64_t> os_commit_latency;
     PerfCounters::avg_tracker<uint64_t> os_apply_latency;
@@ -237,48 +237,46 @@ private:
     bool _get_max_uncompleted(
       uint64_t *seq ///< [out] max uncompleted seq
       ) {
-      assert(qlock.is_locked());
-      assert(seq);
-      *seq = 0;
-      if (q.empty() && jq.empty())
-	return true;
+        assert(qlock.is_locked());
+        assert(seq);
+        *seq = 0;
+        if (q.empty() && jq.empty())
+            return true;
 
-      if (!q.empty())
-	*seq = q.back()->op;
-      if (!jq.empty() && jq.back() > *seq)
-	*seq = jq.back();
-
-      return false;
+        if (!q.empty())
+            *seq = q.back()->op;
+        if (!jq.empty() && jq.back() > *seq)
+            *seq = jq.back();
+        return false;
     } /// @returns true if both queues are empty
 
     /// get_min_uncompleted
     bool _get_min_uncompleted(
       uint64_t *seq ///< [out] min uncompleted seq
       ) {
-      assert(qlock.is_locked());
-      assert(seq);
-      *seq = 0;
-      if (q.empty() && jq.empty())
-	return true;
+        assert(qlock.is_locked());
+        assert(seq);
+        *seq = 0;
+        if (q.empty() && jq.empty())
+            return true;
 
-      if (!q.empty())
-	*seq = q.front()->op;
-      if (!jq.empty() && jq.front() < *seq)
-	*seq = jq.front();
-
-      return false;
+        if (!q.empty())
+            *seq = q.front()->op;
+        if (!jq.empty() && jq.front() < *seq)
+            *seq = jq.front();
+        return false;
     } /// @returns true if both queues are empty
 
     void _wake_flush_waiters(list<Context*> *to_queue) {
       uint64_t seq;
       if (_get_min_uncompleted(&seq))
-	seq = -1;
+        seq = -1;
 
       for (list<pair<uint64_t, Context*> >::iterator i =
-	     flush_commit_waiters.begin();
-	   i != flush_commit_waiters.end() && i->first < seq;
-	   flush_commit_waiters.erase(i++)) {
-	to_queue->push_back(i->second);
+           flush_commit_waiters.begin();
+           i != flush_commit_waiters.end() && i->first < seq;
+           flush_commit_waiters.erase(i++)) {
+          to_queue->push_back(i->second);
       }
     }
 
@@ -319,40 +317,40 @@ private:
       Mutex::Locker l(qlock);
 
       while (cct->_conf->filestore_blackhole)
-	cond.Wait(qlock);  // wait forever
-
+        cond.Wait(qlock);  // wait forever
 
       // get max for journal _or_ op queues
       uint64_t seq = 0;
       if (!q.empty())
-	seq = q.back()->op;
+        seq = q.back()->op;
       if (!jq.empty() && jq.back() > seq)
-	seq = jq.back();
+        seq = jq.back();
 
       if (seq) {
-	// everything prior to our watermark to drain through either/both queues
-	while ((!q.empty() && q.front()->op <= seq) ||
-	       (!jq.empty() && jq.front() <= seq))
-	  cond.Wait(qlock);
+        // everything prior to our watermark to drain through either/both queues
+        while ((!q.empty() && q.front()->op <= seq) ||
+               (!jq.empty() && jq.front() <= seq)) 
+            cond.Wait(qlock);
       }
     }
     bool flush_commit(Context *c) override {
       Mutex::Locker l(qlock);
       uint64_t seq = 0;
       if (_get_max_uncompleted(&seq)) {
-	return true;
+        return true;
       } else {
-	flush_commit_waiters.push_back(make_pair(seq, c));
-	return false;
+        flush_commit_waiters.push_back(make_pair(seq, c));
+        return false;
       }
     }
 
     OpSequencer(CephContext* cct, int i)
       : Sequencer_impl(cct),
-	qlock("FileStore::OpSequencer::qlock", false, false),
-	parent(0),
-	apply_lock("FileStore::OpSequencer::apply_lock", false, false),
+        qlock("FileStore::OpSequencer::qlock", false, false),
+        parent(0),
+        apply_lock("FileStore::OpSequencer::apply_lock", false, false),
         id(i) {}
+
     ~OpSequencer() override {
       assert(q.empty());
     }
@@ -379,8 +377,10 @@ private:
   ThreadPool op_tp;
   struct OpWQ : public ThreadPool::WorkQueue<OpSequencer> {
     FileStore *store;
+
     OpWQ(FileStore *fs, time_t timeout, time_t suicide_timeout, ThreadPool *tp)
-      : ThreadPool::WorkQueue<OpSequencer>("FileStore::OpWQ", timeout, suicide_timeout, tp), store(fs) {}
+      : ThreadPool::WorkQueue<OpSequencer>("FileStore::OpWQ", timeout, suicide_timeout, tp),
+        store(fs) {}
 
     bool _enqueue(OpSequencer *osr) override {
       store->op_queue.push_back(osr);
@@ -394,7 +394,7 @@ private:
     }
     OpSequencer *_dequeue() override {
       if (store->op_queue.empty())
-	return nullptr;
+        return nullptr;
       OpSequencer *osr = store->op_queue.front();
       store->op_queue.pop_front();
       return osr;
@@ -413,8 +413,8 @@ private:
   void _do_op(OpSequencer *o, ThreadPool::TPHandle &handle);
   void _finish_op(OpSequencer *o);
   Op *build_op(vector<Transaction>& tls,
-	       Context *onreadable, Context *onreadable_sync,
-	       TrackedOpRef osd_op);
+         Context *onreadable, Context *onreadable_sync,
+         TrackedOpRef osd_op);
   void queue_op(OpSequencer *osr, Op *o);
   void op_queue_reserve_throttle(Op *o);
   void op_queue_release_throttle(Op *o);
@@ -442,11 +442,11 @@ public:
   void lfn_close(FDRef fd);
   int lfn_link(const coll_t& c, const coll_t& newcid, const ghobject_t& o, const ghobject_t& newoid) ;
   int lfn_unlink(const coll_t& cid, const ghobject_t& o, const SequencerPosition &spos,
-		 bool force_clear_omap=false);
+     bool force_clear_omap=false);
 
 public:
   FileStore(CephContext* cct, const std::string &base, const std::string &jdev,
-	    osflagbits_t flags = 0,
+      osflagbits_t flags = 0,
     const char *internal_name = "filestore", bool update_to=false);
   ~FileStore() override;
 
@@ -520,8 +520,8 @@ public:
     ThreadPool::TPHandle *handle);
 
   int queue_transactions(Sequencer *osr, vector<Transaction>& tls,
-			 TrackedOpRef op = TrackedOpRef(),
-			 ThreadPool::TPHandle *handle = nullptr) override;
+       TrackedOpRef op = TrackedOpRef(),
+       ThreadPool::TPHandle *handle = nullptr) override;
 
   /**
    * set replay guard xattr on given file
@@ -533,18 +533,18 @@ public:
    * @param spos sequencer position of the last operation we should not replay
    */
   void _set_replay_guard(int fd,
-			 const SequencerPosition& spos,
-			 const ghobject_t *oid=0,
-			 bool in_progress=false);
+       const SequencerPosition& spos,
+       const ghobject_t *oid=0,
+       bool in_progress=false);
   void _set_replay_guard(const coll_t& cid,
                          const SequencerPosition& spos,
                          bool in_progress);
   void _set_global_replay_guard(const coll_t& cid,
-				const SequencerPosition &spos);
+        const SequencerPosition &spos);
 
   /// close a replay guard opened with in_progress=true
   void _close_replay_guard(int fd, const SequencerPosition& spos,
-			   const ghobject_t *oid=0);
+         const ghobject_t *oid=0);
   void _close_replay_guard(const coll_t& cid, const SequencerPosition& spos);
 
   /**
@@ -603,14 +603,14 @@ public:
 
   int _touch(const coll_t& cid, const ghobject_t& oid);
   int _write(const coll_t& cid, const ghobject_t& oid, uint64_t offset, size_t len,
-	      const bufferlist& bl, uint32_t fadvise_flags = 0);
+        const bufferlist& bl, uint32_t fadvise_flags = 0);
   int _zero(const coll_t& cid, const ghobject_t& oid, uint64_t offset, size_t len);
   int _truncate(const coll_t& cid, const ghobject_t& oid, uint64_t size);
   int _clone(const coll_t& cid, const ghobject_t& oldoid, const ghobject_t& newoid,
-	     const SequencerPosition& spos);
+       const SequencerPosition& spos);
   int _clone_range(const coll_t& oldcid, const ghobject_t& oldoid, const coll_t& newcid, const ghobject_t& newoid,
-		   uint64_t srcoff, uint64_t len, uint64_t dstoff,
-		   const SequencerPosition& spos);
+       uint64_t srcoff, uint64_t len, uint64_t dstoff,
+       const SequencerPosition& spos);
   int _do_clone_range(int from, int to, uint64_t srcoff, uint64_t len, uint64_t dstoff);
   int _do_sparse_copy_range(int from, int to, uint64_t srcoff, uint64_t len, uint64_t dstoff);
   int _do_copy_range(int from, int to, uint64_t srcoff, uint64_t len, uint64_t dstoff, bool skip_sloppycrc=false);
@@ -666,14 +666,14 @@ public:
   int getattrs(const coll_t& cid, const ghobject_t& oid, map<string,bufferptr>& aset) override;
 
   int _setattrs(const coll_t& cid, const ghobject_t& oid, map<string,bufferptr>& aset,
-		const SequencerPosition &spos);
+    const SequencerPosition &spos);
   int _rmattr(const coll_t& cid, const ghobject_t& oid, const char *name,
-	      const SequencerPosition &spos);
+        const SequencerPosition &spos);
   int _rmattrs(const coll_t& cid, const ghobject_t& oid,
-	       const SequencerPosition &spos);
+         const SequencerPosition &spos);
 
   int _collection_remove_recursive(const coll_t &cid,
-				   const SequencerPosition &spos);
+           const SequencerPosition &spos);
 
   int _collection_set_bits(const coll_t& cid, int bits);
 
@@ -681,8 +681,8 @@ public:
   using ObjectStore::collection_list;
   int collection_bits(const coll_t& c) override;
   int collection_list(const coll_t& c,
-		      const ghobject_t& start, const ghobject_t& end, int max,
-		      vector<ghobject_t> *ls, ghobject_t *next) override;
+          const ghobject_t& start, const ghobject_t& end, int max,
+          vector<ghobject_t> *ls, ghobject_t *next) override;
   int list_collections(vector<coll_t>& ls) override;
   int list_collections(vector<coll_t>& ls, bool include_temp);
   int collection_stat(const coll_t& c, struct stat *st);
@@ -692,7 +692,7 @@ public:
   // omap (see ObjectStore.h for documentation)
   using ObjectStore::omap_get;
   int omap_get(const coll_t& c, const ghobject_t &oid, bufferlist *header,
-	       map<string, bufferlist> *out) override;
+         map<string, bufferlist> *out) override;
   using ObjectStore::omap_get_header;
   int omap_get_header(
     const coll_t& c,
@@ -703,15 +703,15 @@ public:
   int omap_get_keys(const coll_t& c, const ghobject_t &oid, set<string> *keys) override;
   using ObjectStore::omap_get_values;
   int omap_get_values(const coll_t& c, const ghobject_t &oid, const set<string> &keys,
-		      map<string, bufferlist> *out) override;
+          map<string, bufferlist> *out) override;
   using ObjectStore::omap_check_keys;
   int omap_check_keys(const coll_t& c, const ghobject_t &oid, const set<string> &keys,
-		      set<string> *out) override;
+          set<string> *out) override;
   using ObjectStore::get_omap_iterator;
   ObjectMap::ObjectMapIterator get_omap_iterator(const coll_t& c, const ghobject_t &oid) override;
 
   int _create_collection(const coll_t& c, int bits,
-			 const SequencerPosition &spos);
+       const SequencerPosition &spos);
   int _destroy_collection(const coll_t& c);
   /**
    * Give an expected number of objects hint to the collection.
@@ -727,11 +727,11 @@ public:
       uint64_t expected_num_objs,
       const SequencerPosition &spos);
   int _collection_add(const coll_t& c, const coll_t& ocid, const ghobject_t& oid,
-		      const SequencerPosition& spos);
+          const SequencerPosition& spos);
   int _collection_move_rename(const coll_t& oldcid, const ghobject_t& oldoid,
-			      coll_t c, const ghobject_t& o,
-			      const SequencerPosition& spos,
-			      bool ignore_enoent = false);
+            coll_t c, const ghobject_t& o,
+            const SequencerPosition& spos,
+            bool ignore_enoent = false);
 
   int _set_alloc_hint(const coll_t& cid, const ghobject_t& oid,
                       uint64_t expected_object_size,
@@ -748,22 +748,22 @@ private:
 
   // omap
   int _omap_clear(const coll_t& cid, const ghobject_t &oid,
-		  const SequencerPosition &spos);
+      const SequencerPosition &spos);
   int _omap_setkeys(const coll_t& cid, const ghobject_t &oid,
-		    const map<string, bufferlist> &aset,
-		    const SequencerPosition &spos);
+        const map<string, bufferlist> &aset,
+        const SequencerPosition &spos);
   int _omap_rmkeys(const coll_t& cid, const ghobject_t &oid, const set<string> &keys,
-		   const SequencerPosition &spos);
+       const SequencerPosition &spos);
   int _omap_rmkeyrange(const coll_t& cid, const ghobject_t &oid,
-		       const string& first, const string& last,
-		       const SequencerPosition &spos);
+           const string& first, const string& last,
+           const SequencerPosition &spos);
   int _omap_setheader(const coll_t& cid, const ghobject_t &oid, const bufferlist &bl,
-		      const SequencerPosition &spos);
+          const SequencerPosition &spos);
   int _split_collection(const coll_t& cid, uint32_t bits, uint32_t rem, coll_t dest,
                         const SequencerPosition &spos);
   int _split_collection_create(const coll_t& cid, uint32_t bits, uint32_t rem,
-			       coll_t dest,
-			       const SequencerPosition &spos);
+             coll_t dest,
+             const SequencerPosition &spos);
 
   const char** get_tracked_conf_keys() const override;
   void handle_conf_change(const struct md_config_t *conf,
@@ -895,9 +895,9 @@ public:
   virtual int _crc_update_truncate(int fd, loff_t off) = 0;
   virtual int _crc_update_zero(int fd, loff_t off, size_t len) = 0;
   virtual int _crc_update_clone_range(int srcfd, int destfd,
-				      loff_t srcoff, size_t len, loff_t dstoff) = 0;
+              loff_t srcoff, size_t len, loff_t dstoff) = 0;
   virtual int _crc_verify_read(int fd, loff_t off, size_t len, const bufferlist& bl,
-			       ostream *out) = 0;
+             ostream *out) = 0;
 };
 
 #endif

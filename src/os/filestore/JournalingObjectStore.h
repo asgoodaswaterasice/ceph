@@ -99,13 +99,13 @@ protected:
     }
     void init_seq(uint64_t fs_op_seq) {
       {
-	Mutex::Locker l(com_lock);
-	committed_seq = fs_op_seq;
-	committing_seq = fs_op_seq;
+	      Mutex::Locker l(com_lock);
+	      committed_seq = fs_op_seq;
+	      committing_seq = fs_op_seq;
       }
       {
-	Mutex::Locker l(apply_lock);
-	max_applied_seq = fs_op_seq;
+	      Mutex::Locker l(apply_lock);
+	      max_applied_seq = fs_op_seq;
       }
     }
   } apply_manager;
